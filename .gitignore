@@ -12,3 +12,8 @@ data/processed/*.json
 .ipynb_checkpoints/
 .DS_Store
 .vscode/
+ga4-credentials.json
+ga4-credentials-oauth.json
+token.json
+ga4-credentials-oauth.json
+token.json
