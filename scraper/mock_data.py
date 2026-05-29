@@ -1,8 +1,8 @@
 """
 mock_data.py
 ------------
-Generates realistic sample Etsy listing data for development.
-Same schema as the real API output — swap in real data when API key is approved.
+Generates realistic mock Etsy listing data and saves to SQLite DB.
+Simulates multiple weekly runs for trend tracking.
 
 Usage:
     python -m scraper.mock_data
@@ -10,8 +10,13 @@ Usage:
 
 import pandas as pd
 import random
+import sys
 import os
 from datetime import datetime, timedelta
+
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from database.db import EtsyDB
+
 
 # ---------------------------------------------------------------------------
 # Sample data pools
@@ -40,15 +45,32 @@ TITLES = [
     "Elegant Gold Foil Birthday Card",
 ]
 
-TAG_POOL = [
+# Week 1 tags — baseline
+TAGS_WEEK1 = [
     "birthday card", "greeting card", "funny card", "handmade card",
     "card for her", "card for him", "best friend", "personalized",
     "floral card", "cute card", "sarcastic", "watercolor",
     "minimalist", "botanical", "dog lover", "cat lover",
     "wine lover", "plant lover", "celestial", "gold foil",
-    "vintage", "elegant", "colorful", "handlettered",
-    "thank you card", "mom birthday", "getting old", "punny",
 ]
+
+# Week 2 tags — some new trending tags appear
+TAGS_WEEK2 = TAGS_WEEK1 + [
+    "graduation card", "mental health", "self care card",
+    "aesthetic card", "retro card",
+]
+
+# Week 3 tags — graduation season peaks
+TAGS_WEEK3 = TAGS_WEEK2 + [
+    "class of 2026", "senior year", "congrats grad",
+    "college graduation", "high school grad",
+]
+
+WEEKLY_TAGS = {
+    0: TAGS_WEEK1,
+    1: TAGS_WEEK2,
+    2: TAGS_WEEK3,
+}
 
 QUERIES = [
     "greeting card",
@@ -61,28 +83,15 @@ QUERIES = [
 # Generator
 # ---------------------------------------------------------------------------
 
-def generate_listing(listing_id: int, query: str) -> dict:
-    """Generate a single realistic mock listing."""
-
-    # Assign tags — pick 8-13 random tags (Etsy max is 13)
-    tags = random.sample(TAG_POOL, k=random.randint(8, 13))
-
-    # Simulate realistic price distribution ($3 - $15)
+def generate_listing(listing_id: int, query: str, tag_pool: list) -> dict:
+    tags = random.sample(tag_pool, k=min(random.randint(8, 13), len(tag_pool)))
     price = round(random.uniform(3.0, 15.0), 2)
-
-    # Simulate favorites — power law distribution (most have few, some have many)
     favorites = int(random.paretovariate(1.5) * 50)
-    favorites = min(favorites, 5000)  # cap at 5000
-
-    # Views correlate loosely with favorites
+    favorites = min(favorites, 5000)
     views = favorites * random.randint(10, 40)
 
-    # Scraped at a random time in the past 30 days
-    days_ago = random.randint(0, 30)
-    scraped_at = (datetime.utcnow() - timedelta(days=days_ago)).isoformat()
-
     return {
-        "listing_id":   listing_id,
+        "listing_id":   str(listing_id),
         "title":        random.choice(TITLES),
         "price_usd":    price,
         "currency":     "USD",
@@ -90,50 +99,52 @@ def generate_listing(listing_id: int, query: str) -> dict:
         "num_favorers": favorites,
         "views":        views,
         "tags":         ", ".join(tags),
-        "shop_id":      random.randint(10000000, 99999999),
+        "shop_id":      str(random.randint(10000000, 99999999)),
         "url":          f"https://www.etsy.com/listing/{listing_id}",
         "state":        "active",
         "query":        query,
-        "scraped_at":   scraped_at,
+        "scraped_at":   datetime.utcnow().isoformat(),
     }
 
 
-def generate_dataset(num_listings: int = 200) -> pd.DataFrame:
-    """Generate a full mock dataset across all queries."""
+def generate_weekly_data(week_offset: int = 0, num_listings: int = 300) -> pd.DataFrame:
+    """Generate one week's worth of mock data."""
+    tag_pool = WEEKLY_TAGS.get(week_offset, TAGS_WEEK3)
     all_listings = []
-    listing_id = 1000000
-
+    listing_id = 1000000 + (week_offset * 10000)
     per_query = num_listings // len(QUERIES)
 
     for query in QUERIES:
-        print(f"[INFO] Generating {per_query} listings for '{query}'...")
         for _ in range(per_query):
-            listing = generate_listing(listing_id, query)
+            listing = generate_listing(listing_id, query, tag_pool)
             all_listings.append(listing)
             listing_id += 1
 
     return pd.DataFrame(all_listings)
 
 
-def save_mock(df: pd.DataFrame) -> str:
-    """Save mock data to data/raw/ with a clear mock label."""
-    os.makedirs("data/raw", exist_ok=True)
-    timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
-    filepath = f"data/raw/mock_data_{timestamp}.csv"
-    df.to_csv(filepath, index=False)
-    print(f"\n[SAVED] {filepath} ({len(df)} rows)")
-    return filepath
-
-
 # ---------------------------------------------------------------------------
-# Entry point
+# Entry point — simulate 3 weeks of data
 # ---------------------------------------------------------------------------
 
 if __name__ == "__main__":
-    df = generate_dataset(num_listings=300)
-    filepath = save_mock(df)
+    db = EtsyDB()
 
-    print("\n--- Preview ---")
-    print(df[["title", "price_usd", "num_favorers", "tags", "query"]].head(5).to_string())
-    print(f"\nTotal: {len(df)} listings across {df['query'].nunique()} queries")
-    print("[DONE]")
+    # Simulate 3 weekly runs going back from today
+    for week_offset in range(3):
+        run_date = (datetime.utcnow() - timedelta(weeks=2 - week_offset)).strftime("%Y-%m-%d")
+        print(f"\n[INFO] Generating week {week_offset + 1} data — run_date: {run_date}")
+
+        df = generate_weekly_data(week_offset=week_offset, num_listings=300)
+        db.insert_listings(df, run_date=run_date)
+
+    print("\n--- Run History ---")
+    print(db.get_runs().to_string(index=False))
+
+    print("\n--- Sample listings ---")
+    df_all = db.get_listings()
+    print(f"Total rows in DB: {len(df_all)}")
+    print(df_all[["title", "tags", "query", "run_date"]].head(5).to_string())
+
+    db.close()
+    print("\n[DONE]")
