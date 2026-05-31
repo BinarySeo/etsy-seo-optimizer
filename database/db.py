@@ -43,10 +43,12 @@ class EtsyDB:
                 url           TEXT,
                 state         TEXT,
                 query         TEXT,
-                run_date      TEXT,   -- YYYY-MM-DD of the scraping run
-                scraped_at    TEXT    -- full UTC timestamp
+                category      TEXT,
+                run_date      TEXT,
+                scraped_at    TEXT
             )
         """)
+
 
         self.conn.execute("""
             CREATE TABLE IF NOT EXISTS runs (

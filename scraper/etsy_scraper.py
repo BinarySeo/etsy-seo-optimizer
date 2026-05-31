@@ -140,9 +140,15 @@ if __name__ == "__main__":
         print("[ERROR] ETSY_API_KEY not found. Check your .env file.")
         exit(1)
 
+    from database.db import EtsyDB
+    import pandas as pd
+    db = EtsyDB()
+    today = datetime.utcnow().strftime("%Y-%m-%d")
+
     keywords = get_keywords(tiers=["tier2", "tier3"], flat=True)
     print(f"[INFO] Running {len(keywords)} keywords across tier2 + tier3\n")
 
+    all_dfs = []
     for item in keywords:
         df = fetch_query(
             query=item["keyword"],
@@ -151,7 +157,14 @@ if __name__ == "__main__":
         )
         if not df.empty:
             save_raw(df, item["keyword"])
+            all_dfs.append(df)
         else:
             print(f"[WARN] No results for '{item['keyword']}'")
 
+    if all_dfs:
+        combined = pd.concat(all_dfs, ignore_index=True)
+        db.insert_listings(combined, run_date=today)
+        print(f"\n[DB] Saved {len(combined)} total rows for run_date={today}")
+
+    db.close()
     print("\n[DONE] All queries complete.")
