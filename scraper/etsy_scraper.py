@@ -14,6 +14,7 @@ import time
 import os
 from datetime import datetime
 from dotenv import load_dotenv
+from strategy.keywords import get_keywords
 
 load_dotenv()
 
@@ -23,11 +24,11 @@ load_dotenv()
 
 API_KEY = os.getenv("ETSY_API_KEY")
 BASE_URL = "https://api.etsy.com/v3/application"
-HEADERS = {"x-api-key": API_KEY}
+SHARED_SECRET = os.getenv("ETSY_SHARED_SECRET")
+HEADERS = {"x-api-key": f"{API_KEY}:{SHARED_SECRET}"}
 
-# Etsy API limit: 25 results per page, max 100 per request
 LIMIT = 100
-DELAY = 1.0  # seconds between requests
+DELAY = 1.0
 
 
 # ---------------------------------------------------------------------------
@@ -44,7 +45,7 @@ def fetch_active_listings(keywords: str, limit: int = 100, offset: int = 0) -> d
         "keywords": keywords,
         "limit": limit,
         "offset": offset,
-        "sort_on": "score",       # relevance ranking
+        "sort_on": "score",
         "sort_order": "desc",
     }
 
@@ -57,9 +58,10 @@ def fetch_active_listings(keywords: str, limit: int = 100, offset: int = 0) -> d
         return {}
 
 
-def parse_listings(data: dict, query: str) -> list:
+def parse_listings(data: dict, query: str, category: str = "") -> list:
     """
     Parse API response into a flat list of dicts.
+    category — the keyword category from strategy/keywords.py (e.g. "birthday")
     """
     listings = []
     results = data.get("results", [])
@@ -78,6 +80,7 @@ def parse_listings(data: dict, query: str) -> list:
             "url":          item.get("url", ""),
             "state":        item.get("state", ""),
             "query":        query,
+            "category":     category,
             "scraped_at":   datetime.utcnow().isoformat(),
         }
         listings.append(listing)
@@ -85,10 +88,11 @@ def parse_listings(data: dict, query: str) -> list:
     return listings
 
 
-def fetch_query(query: str, total: int = 200) -> pd.DataFrame:
+def fetch_query(query: str, total: int = 100, category: str = "") -> pd.DataFrame:
     """
     Fetch multiple pages of results for a query.
-    total = how many listings to fetch (max 200 recommended)
+    total   — how many listings to fetch
+    category — keyword category for grouping analysis later
     """
     all_listings = []
     offset = 0
@@ -102,7 +106,7 @@ def fetch_query(query: str, total: int = 200) -> pd.DataFrame:
         if not data:
             break
 
-        listings = parse_listings(data, query)
+        listings = parse_listings(data, query, category)
         if not listings:
             print("  No more results.")
             break
@@ -113,8 +117,7 @@ def fetch_query(query: str, total: int = 200) -> pd.DataFrame:
         offset += batch_size
         time.sleep(DELAY)
 
-    df = pd.DataFrame(all_listings)
-    return df
+    return pd.DataFrame(all_listings)
 
 
 def save_raw(df: pd.DataFrame, query: str) -> str:
@@ -137,17 +140,18 @@ if __name__ == "__main__":
         print("[ERROR] ETSY_API_KEY not found. Check your .env file.")
         exit(1)
 
-    queries = [
-        "greeting card",
-        "birthday card handmade",
-        "funny greeting card",
-    ]
+    keywords = get_keywords(tiers=["tier2", "tier3"], flat=True)
+    print(f"[INFO] Running {len(keywords)} keywords across tier2 + tier3\n")
 
-    for query in queries:
-        df = fetch_query(query, total=200)
+    for item in keywords:
+        df = fetch_query(
+            query=item["keyword"],
+            total=100,
+            category=item["category"],
+        )
         if not df.empty:
-            save_raw(df, query)
+            save_raw(df, item["keyword"])
         else:
-            print(f"[WARN] No results for '{query}'")
+            print(f"[WARN] No results for '{item['keyword']}'")
 
     print("\n[DONE] All queries complete.")
