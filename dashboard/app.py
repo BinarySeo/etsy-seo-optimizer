@@ -130,6 +130,7 @@ with st.sidebar:
             "🏠 Weekly Briefing",
             "📈 Trend Analysis",
             "🎯 SEO Optimizer",
+            "🏷️ Tag Analysis",
             "🖼️ Reference Gallery",
             "📊 GA4 Analytics",
         ],
@@ -389,7 +390,99 @@ elif page == "🖼️ Reference Gallery":
         })[["Title", "Price ($)", "Favorites", "Views", "Saves per View", "Tags", "Link"]],
         use_container_width=True, hide_index=True,
     )
+# ---------------------------------------------------------------------------
+# Page: Tag Analysis
+# ---------------------------------------------------------------------------
 
+elif page == "🏷️ Tag Analysis":
+    st.title("🏷️ Tag Analysis")
+    st.caption("Tag patterns by card category — what top competitors are using")
+
+    from analysis.tag_analysis import analyze_all_categories
+
+    df_all = load_all_listings()
+    if df_all.empty:
+        st.warning("No data found. Run scraper first.")
+        st.stop()
+
+    # Use latest run only
+    latest_run = df_all["run_date"].max()
+    df_latest = df_all[df_all["run_date"] == latest_run]
+
+    # Category selector
+    categories = sorted(df_latest["category"].dropna().unique())
+    selected = st.selectbox("Select card category", categories, format_func=lambda x: x.replace("_", " ").title())
+
+    patterns = analyze_all_categories(df_latest)
+    data = patterns.get(selected, {})
+
+    if not data:
+        st.warning("No data for this category.")
+        st.stop()
+
+    # KPIs
+    col1, col2, col3 = st.columns(3)
+    col1.metric("Listings Analyzed", data["total_listings"])
+    col2.metric("Essential Tags", len(data["essential"]))
+    col3.metric("Strong Tags", len(data["strong"]))
+
+    st.divider()
+
+    # Chart
+    df_freq = data["all_freq"].head(20).copy()
+    df_freq["strength"] = df_freq["tag"].apply(
+        lambda t: "Essential (70%+)" if t in data["essential"]
+        else ("Strong (40-70%)" if t in data["strong"]
+        else ("Differentiating (15-40%)" if t in data["differentiating"]
+        else "Other"))
+    )
+
+    color_map = {
+        "Essential (70%+)":      "#D4543A",
+        "Strong (40-70%)":       "#E8A838",
+        "Differentiating (15-40%)": "#4C9BE8",
+        "Other":                 "#CCCCCC",
+    }
+
+    fig = px.bar(
+        df_freq,
+        x="pct", y="tag",
+        orientation="h",
+        color="strength",
+        color_discrete_map=color_map,
+        labels={"pct": "% of listings using this tag", "tag": ""},
+        title=f"{selected.replace('_', ' ').title()} — Top Tag Patterns",
+    )
+    fig.update_layout(height=500, legend_title="Tag Strength")
+    fig.update_yaxes(categoryorder="total ascending")
+    st.plotly_chart(fig, use_container_width=True)
+
+    st.divider()
+
+    # Tag lists
+    col_l, col_m, col_r = st.columns(3)
+
+    with col_l:
+        st.markdown("**🔴 Essential**")
+        st.caption("70%+ of listings")
+        if data["essential"]:
+            for tag in data["essential"]:
+                st.code(tag, language=None)
+        else:
+            st.caption("None — market is fragmented")
+
+    with col_m:
+        st.markdown("**🟡 Strong**")
+        st.caption("40-70% of listings")
+        for tag in data["strong"]:
+            st.code(tag, language=None)
+
+    with col_r:
+        st.markdown("**🟢 Differentiating**")
+        st.caption("15-40% of listings")
+        for tag in data["differentiating"]:
+            st.code(tag, language=None)
+            
 # ---------------------------------------------------------------------------
 # Page: GA4 Analytics
 # ---------------------------------------------------------------------------
