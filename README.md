@@ -86,13 +86,14 @@ Five-page interactive dashboard:
 
 | Layer | Tools |
 |-------|-------|
-| Data ingestion | Etsy Open API v3, `requests`, `BeautifulSoup4` |
+| Data ingestion | Etsy Open API v3, `requests` |
 | Storage | SQLite — weekly runs with `run_date` for time-series trending |
 | Analysis | `pandas`, `scikit-learn` (TF-IDF), custom delta logic |
 | LLM layer | OpenAI GPT-4o-mini — briefings, clustering, insight generation |
 | Traffic data | Google Analytics Data API v1 (OAuth 2.0) |
 | Dashboard | Streamlit, Plotly |
-| Environment | Python 3.11+, `python-dotenv`, `venv` |
+| Environment | Python 3.11 – 3.13, `python-dotenv`, `venv` |
+| Quality | `pytest` (29 tests incl. a no-API-key dashboard smoke test), GitHub Actions CI |
 
 ---
 
@@ -182,6 +183,16 @@ python -m analysis.trend_analysis
 python -m analysis.ai_briefing
 python -m streamlit run dashboard/app.py
 ```
+
+### Run the tests
+
+```bash
+pip install -r requirements-dev.txt
+python -m pytest -q
+```
+
+The suite runs the mock-data pipeline end to end and opens every dashboard page
+with no API keys set, so it needs no credentials. CI runs it on Python 3.11 and 3.13.
 
 ---
 

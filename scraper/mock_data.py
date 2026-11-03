@@ -12,7 +12,7 @@ import pandas as pd
 import random
 import sys
 import os
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from database.db import EtsyDB
@@ -72,10 +72,12 @@ WEEKLY_TAGS = {
     2: TAGS_WEEK3,
 }
 
+# (search query, category) — categories match strategy/keywords.py so the
+# category-level tag analysis and dashboard pages have data in mock mode too
 QUERIES = [
-    "greeting card",
-    "birthday card handmade",
-    "funny greeting card",
+    ("handmade birthday card", "birthday"),
+    ("funny thank you card", "thank_you"),
+    ("housewarming card handmade", "housewarming"),
 ]
 
 
@@ -83,7 +85,7 @@ QUERIES = [
 # Generator
 # ---------------------------------------------------------------------------
 
-def generate_listing(listing_id: int, query: str, tag_pool: list) -> dict:
+def generate_listing(listing_id: int, query: str, tag_pool: list, category: str = "") -> dict:
     tags = random.sample(tag_pool, k=min(random.randint(8, 13), len(tag_pool)))
     price = round(random.uniform(3.0, 15.0), 2)
     favorites = int(random.paretovariate(1.5) * 50)
@@ -103,20 +105,25 @@ def generate_listing(listing_id: int, query: str, tag_pool: list) -> dict:
         "url":          f"https://www.etsy.com/listing/{listing_id}",
         "state":        "active",
         "query":        query,
-        "scraped_at":   datetime.utcnow().isoformat(),
+        "category":     category,
+        "scraped_at":   datetime.now(timezone.utc).isoformat(),
     }
 
 
-def generate_weekly_data(week_offset: int = 0, num_listings: int = 300) -> pd.DataFrame:
-    """Generate one week's worth of mock data."""
+def generate_weekly_data(
+    week_offset: int = 0, num_listings: int = 300, seed: int | None = None
+) -> pd.DataFrame:
+    """Generate one week's worth of mock data. Pass seed for repeatable output."""
+    if seed is not None:
+        random.seed(seed + week_offset)
     tag_pool = WEEKLY_TAGS.get(week_offset, TAGS_WEEK3)
     all_listings = []
     listing_id = 1000000 + (week_offset * 10000)
     per_query = num_listings // len(QUERIES)
 
-    for query in QUERIES:
+    for query, category in QUERIES:
         for _ in range(per_query):
-            listing = generate_listing(listing_id, query, tag_pool)
+            listing = generate_listing(listing_id, query, tag_pool, category)
             all_listings.append(listing)
             listing_id += 1
 
@@ -132,10 +139,10 @@ if __name__ == "__main__":
 
     # Simulate 3 weekly runs going back from today
     for week_offset in range(3):
-        run_date = (datetime.utcnow() - timedelta(weeks=2 - week_offset)).strftime("%Y-%m-%d")
+        run_date = (datetime.now(timezone.utc) - timedelta(weeks=2 - week_offset)).strftime("%Y-%m-%d")
         print(f"\n[INFO] Generating week {week_offset + 1} data — run_date: {run_date}")
 
-        df = generate_weekly_data(week_offset=week_offset, num_listings=300)
+        df = generate_weekly_data(week_offset=week_offset, num_listings=300, seed=42)
         db.insert_listings(df, run_date=run_date)
 
     print("\n--- Run History ---")

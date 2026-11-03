@@ -12,7 +12,7 @@ import requests
 import pandas as pd
 import time
 import os
-from datetime import datetime
+from datetime import datetime, timezone
 from dotenv import load_dotenv
 from strategy.keywords import get_keywords
 
@@ -81,7 +81,7 @@ def parse_listings(data: dict, query: str, category: str = "") -> list:
             "state":        item.get("state", ""),
             "query":        query,
             "category":     category,
-            "scraped_at":   datetime.utcnow().isoformat(),
+            "scraped_at":   datetime.now(timezone.utc).isoformat(),
         }
         listings.append(listing)
 
@@ -123,7 +123,7 @@ def fetch_query(query: str, total: int = 100, category: str = "") -> pd.DataFram
 def save_raw(df: pd.DataFrame, query: str) -> str:
     """Save raw DataFrame to data/raw/ with timestamp."""
     os.makedirs("data/raw", exist_ok=True)
-    timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
     safe_query = query.replace(" ", "_")
     filepath = f"data/raw/{safe_query}_{timestamp}.csv"
     df.to_csv(filepath, index=False)
@@ -143,7 +143,7 @@ if __name__ == "__main__":
     from database.db import EtsyDB
     import pandas as pd
     db = EtsyDB()
-    today = datetime.utcnow().strftime("%Y-%m-%d")
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
 
     keywords = get_keywords(tiers=["tier2", "tier3"], flat=True)
     print(f"[INFO] Running {len(keywords)} keywords across tier2 + tier3\n")

@@ -27,6 +27,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from database.db import EtsyDB
 from analysis.trend_analysis import get_trending_summary, get_tag_frequency
 from analysis.ai_briefing import run_briefing, get_upcoming_events
+from analysis.llm import llm_available
 from analysis.tag_analysis import analyze_all_categories
 from analysis.ga4_analysis import (
     fetch_top_pages, fetch_weekly_trend,
@@ -317,9 +318,15 @@ if page == "🎯 This Week's Actions":
         st.markdown(briefing)
     else:
         st.info("No briefing yet.")
-        if st.button("Generate briefing"):
+        if not llm_available():
+            st.caption("Add OPENAI_API_KEY to .env to generate AI briefings.")
+        elif st.button("Generate briefing"):
             with st.spinner("Analyzing with GPT..."):
-                run_briefing()
+                try:
+                    run_briefing()
+                except Exception as e:
+                    st.error(f"Could not generate the briefing: {e}")
+                    st.stop()
                 st.cache_data.clear()
                 st.rerun()
 
@@ -387,7 +394,7 @@ elif page == "🔍 Market Research":
                 margin=dict(l=0, r=0, t=0, b=0),
             )
             fig.update_yaxes(categoryorder="total ascending")
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, width="stretch")
 
             # Tag lists
             col1, col2, col3 = st.columns(3)
@@ -428,7 +435,7 @@ elif page == "🔍 Market Research":
             )
             fig_r.update_layout(height=300, showlegend=False, coloraxis_showscale=False, margin=dict(l=0,r=0,t=0,b=0))
             fig_r.update_yaxes(categoryorder="total ascending", title="")
-            st.plotly_chart(fig_r, use_container_width=True)
+            st.plotly_chart(fig_r, width="stretch")
 
         with col_r:
             st.subheader("↓ Losing momentum")
@@ -441,7 +448,7 @@ elif page == "🔍 Market Research":
             )
             fig_f.update_layout(height=300, showlegend=False, coloraxis_showscale=False, margin=dict(l=0,r=0,t=0,b=0))
             fig_f.update_yaxes(categoryorder="total ascending", title="")
-            st.plotly_chart(fig_f, use_container_width=True)
+            st.plotly_chart(fig_f, width="stretch")
 
 # ---------------------------------------------------------------------------
 # Page 3: Fix My Listings
@@ -457,6 +464,13 @@ elif page == "🛠️ Fix My Listings":
         try:
             df_ga4 = load_ga4_pages()
             ga4_ok = not df_ga4.empty
+        except FileNotFoundError:
+            st.info(
+                "GA4 isn't connected yet. Add your OAuth client file "
+                "(`ga4-credentials-oauth.json`) and `GA4_PROPERTY_ID` to `.env`, "
+                "then run `python -m analysis.ga4_analysis` once to sign in."
+            )
+            st.stop()
         except Exception as e:
             st.error(f"Could not load GA4 data: {e}")
             st.stop()
@@ -590,7 +604,7 @@ elif page == "💡 New Card Ideas":
             labels={"Market listings": "Listings in market", "Category": ""},
         )
         fig.update_layout(height=250, coloraxis_showscale=False, margin=dict(l=0,r=0,t=0,b=0))
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width="stretch")
 
         for row in gap_rows:
             cat_key = row["Category"].lower().replace(" ", "_")
@@ -691,6 +705,6 @@ elif page == "📖 Reference":
             "url":            "Link",
             "category":       "Category",
         })[["Title", "Category", "Price ($)", "Favorites", "Views", "Saves per view", "Tags", "Link"]],
-        use_container_width=True,
+        width="stretch",
         hide_index=True,
     )

@@ -19,7 +19,7 @@ import re
 import sys
 import json
 import pandas as pd
-from datetime import datetime
+from datetime import datetime, timezone
 from google.oauth2.credentials import Credentials
 from google.auth.transport.requests import Request
 from google_auth_oauthlib.flow import InstalledAppFlow
@@ -27,10 +27,10 @@ from google.analytics.data_v1beta import BetaAnalyticsDataClient
 from google.analytics.data_v1beta.types import (
     RunReportRequest, DateRange, Metric, Dimension, OrderBy
 )
-from openai import OpenAI
 from dotenv import load_dotenv
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from analysis.llm import complete
 
 load_dotenv()
 
@@ -43,7 +43,6 @@ TOKEN_PATH        = 'token.json'               # saved after first OAuth login
 CREDENTIALS_PATH  = 'ga4-credentials-oauth.json'  # OAuth client secret
 PROPERTY_ID       = os.getenv('GA4_PROPERTY_ID')   # from .env
 
-openai_client = OpenAI(api_key=os.getenv('OPENAI_API_KEY'))
 
 
 # ---------------------------------------------------------------------------
@@ -501,14 +500,7 @@ Include posting frequency, board structure, pin types, and best days to post.
 Write in plain English. Be specific and practical. No jargon.
 """
 
-    response = openai_client.chat.completions.create(
-        model="gpt-4o-mini",
-        messages=[{"role": "user", "content": prompt}],
-        max_tokens=1500,
-        temperature=0.7,
-    )
-
-    return response.choices[0].message.content
+    return complete(prompt, max_tokens=1500, temperature=0.7)
 
 
 def cluster_listings(df_pages: pd.DataFrame) -> dict:
@@ -562,23 +554,21 @@ Return ONLY valid JSON (no markdown, no explanation) with this exact structure:
 }}
 """
 
-    response = openai_client.chat.completions.create(
-        model="gpt-4o-mini",
-        messages=[{"role": "user", "content": prompt}],
-        max_tokens=1500,
-        temperature=0.3,  # lower temp = more consistent JSON output
-    )
+    # JSON mode + low temperature = consistently parseable output
+    raw = complete(prompt, max_tokens=1500, temperature=0.3, json_mode=True)
+    return parse_json_reply(raw)
 
-    raw = response.choices[0].message.content
 
-    # Strip markdown code fences if present
-    clean = raw.replace("```json", "").replace("```", "").strip()
-
+def parse_json_reply(raw: str) -> dict:
+    """Parse a model reply as JSON, tolerating stray markdown code fences."""
+    clean = raw.strip()
+    if clean.startswith("```"):
+        clean = re.sub(r"^```(?:json)?\s*|\s*```$", "", clean)
     try:
-        return json.loads(clean)
+        parsed = json.loads(clean)
     except json.JSONDecodeError:
-        # If parsing fails, return raw text wrapped in dict
         return {"raw": raw}
+    return parsed if isinstance(parsed, dict) else {"raw": raw}
 
 
 # ---------------------------------------------------------------------------
@@ -588,7 +578,7 @@ Return ONLY valid JSON (no markdown, no explanation) with this exact structure:
 def save_ga4_data(df_pages: pd.DataFrame, df_sources: pd.DataFrame):
     """Save raw GA4 page and source data to data/processed/."""
     os.makedirs("data/processed", exist_ok=True)
-    timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
 
     pages_path   = f"data/processed/ga4_pages_{timestamp}.csv"
     sources_path = f"data/processed/ga4_sources_{timestamp}.csv"
@@ -603,7 +593,7 @@ def save_ga4_data(df_pages: pd.DataFrame, df_sources: pd.DataFrame):
 def save_insights(insights: str, clusters: dict):
     """Save AI insights and clusters to data/processed/."""
     os.makedirs("data/processed", exist_ok=True)
-    timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
 
     # Save traffic insights as text
     insights_path = f"data/processed/ga4_insights_{timestamp}.txt"

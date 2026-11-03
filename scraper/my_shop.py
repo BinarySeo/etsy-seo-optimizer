@@ -16,7 +16,7 @@ import hashlib
 import base64
 import secrets
 import pandas as pd
-from datetime import datetime
+from datetime import datetime, timezone
 from dotenv import load_dotenv
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -144,7 +144,7 @@ def fetch_my_listings(access_token: str, shop_id: str) -> pd.DataFrame:
                 "views":        item.get("views", 0),
                 "price_usd":    item.get("price", {}).get("amount", 0) / 100 if item.get("price") else 0,
                 "url":          item.get("url", ""),
-                "fetched_at":   datetime.utcnow().isoformat(),
+                "fetched_at":   datetime.now(timezone.utc).isoformat(),
             })
 
         offset += len(results)
@@ -216,7 +216,7 @@ if __name__ == "__main__":
 
         # Save
         os.makedirs("data/processed", exist_ok=True)
-        filepath = f"data/processed/my_shop_listings_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}.csv"
+        filepath = f"data/processed/my_shop_listings_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}.csv"
         df.to_csv(filepath, index=False)
         print(f"\n[SAVED] {filepath}")
 

@@ -10,56 +10,68 @@ Usage:
 
 import os
 import sys
-from datetime import datetime
-from openai import OpenAI
+from datetime import date, datetime, timedelta, timezone
 from dotenv import load_dotenv
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from database.db import EtsyDB
 from analysis.trend_analysis import get_trending_summary
+from analysis.llm import complete
 
 load_dotenv()
 
-client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-
 # ---------------------------------------------------------------------------
 # Seasonal events calendar
+# Fixed-date holidays use (month, day); holidays that move every year are
+# computed as the nth weekday of the month (weekday: Monday=0 … Sunday=6).
 # ---------------------------------------------------------------------------
 
 SEASONAL_EVENTS = [
-    {"name": "Father's Day",      "month": 6,  "day": 15},
+    {"name": "New Year",          "month": 1,  "day": 1},
+    {"name": "Valentine's Day",   "month": 2,  "day": 14},
+    {"name": "Mother's Day",      "month": 5,  "nth": 2, "weekday": 6},   # 2nd Sunday of May
+    {"name": "Graduation Season", "month": 5,  "day": 25},
+    {"name": "Father's Day",      "month": 6,  "nth": 3, "weekday": 6},   # 3rd Sunday of June
     {"name": "Fourth of July",    "month": 7,  "day": 4},
     {"name": "Back to School",    "month": 8,  "day": 15},
     {"name": "Halloween",         "month": 10, "day": 31},
-    {"name": "Thanksgiving",      "month": 11, "day": 27},
+    {"name": "Thanksgiving",      "month": 11, "nth": 4, "weekday": 3},   # 4th Thursday of November
     {"name": "Christmas",         "month": 12, "day": 25},
-    {"name": "New Year",          "month": 1,  "day": 1},
-    {"name": "Valentine's Day",   "month": 2,  "day": 14},
-    {"name": "Mother's Day",      "month": 5,  "day": 11},
-    {"name": "Graduation Season", "month": 5,  "day": 25},
 ]
 
 
-def get_upcoming_events(within_days: int = 60) -> list:
-    """Return events coming up within the next N days."""
-    today = datetime.utcnow()
+def nth_weekday(year: int, month: int, nth: int, weekday: int) -> date:
+    """Date of the nth given weekday in a month, e.g. the 4th Thursday of November."""
+    first = date(year, month, 1)
+    offset = (weekday - first.weekday()) % 7
+    return first + timedelta(days=offset + 7 * (nth - 1))
+
+
+def event_date(event: dict, year: int) -> date:
+    """Calendar date of a seasonal event in the given year."""
+    if "nth" in event:
+        return nth_weekday(year, event["month"], event["nth"], event["weekday"])
+    return date(year, event["month"], event["day"])
+
+
+def get_upcoming_events(within_days: int = 60, today: date | None = None) -> list:
+    """Return events coming up within the next N days, soonest first."""
+    today = today or datetime.now(timezone.utc).date()
     upcoming = []
 
     for event in SEASONAL_EVENTS:
-        # Try this year first, then next year
-        for year in [today.year, today.year + 1]:
-            try:
-                event_date = datetime(year, event["month"], event["day"])
-                days_away = (event_date - today).days
-                if 0 <= days_away <= within_days:
+        # This year's date if it hasn't passed, otherwise next year's
+        for year in (today.year, today.year + 1):
+            when = event_date(event, year)
+            days_away = (when - today).days
+            if days_away >= 0:
+                if days_away <= within_days:
                     upcoming.append({
                         "name": event["name"],
-                        "date": event_date.strftime("%B %d"),
+                        "date": when.strftime("%B %d"),
                         "days_away": days_away,
                     })
-                    break
-            except ValueError:
-                continue
+                break
 
     return sorted(upcoming, key=lambda x: x["days_away"])
 
@@ -109,14 +121,7 @@ Please provide:
 Be specific, practical, and encouraging. Write for a small business owner, not a data scientist.
 """
 
-    response = client.chat.completions.create(
-        model="gpt-4o-mini",
-        messages=[{"role": "user", "content": prompt}],
-        max_tokens=1000,
-        temperature=0.7,
-    )
-
-    return response.choices[0].message.content
+    return complete(prompt, max_tokens=1000, temperature=0.7)
 
 
 def run_briefing(save: bool = True) -> str:
@@ -136,7 +141,7 @@ def run_briefing(save: bool = True) -> str:
 
     if save:
         os.makedirs("data/processed", exist_ok=True)
-        timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+        timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
         filepath = f"data/processed/briefing_{timestamp}.txt"
         with open(filepath, "w") as f:
             f.write(briefing)
