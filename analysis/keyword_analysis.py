@@ -11,21 +11,38 @@ Usage:
 import pandas as pd
 import numpy as np
 import os
+import sys
 import glob
 from collections import Counter
 from sklearn.feature_extraction.text import TfidfVectorizer
-from datetime import datetime
+from datetime import datetime, timezone
+
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from database.db import EtsyDB, DB_PATH
 
 
 # ---------------------------------------------------------------------------
 # Load data
 # ---------------------------------------------------------------------------
 
-def load_latest_data(data_dir: str = "data/raw") -> pd.DataFrame:
-    """Load the most recently saved CSV from data/raw/."""
+def load_latest_data(data_dir: str = "data/raw", db_path: str = DB_PATH) -> pd.DataFrame:
+    """
+    Load the latest weekly run from the SQLite store (what the mock and live
+    scrapers write to). Falls back to the newest CSV in data/raw/.
+    """
+    if os.path.exists(db_path):
+        with EtsyDB(db_path) as db:
+            latest_run = db.get_latest_run_date()
+            if latest_run:
+                df = db.get_listings(run_date=latest_run)
+                print(f"[INFO] {len(df)} listings loaded from run {latest_run}")
+                return df
+
     files = glob.glob(f"{data_dir}/*.csv")
     if not files:
-        raise FileNotFoundError(f"No CSV files found in {data_dir}")
+        raise FileNotFoundError(
+            f"No data found. Run `python -m scraper.mock_data` (or the Etsy scraper) first."
+        )
 
     latest = max(files, key=os.path.getctime)
     print(f"[INFO] Loading: {latest}")
@@ -127,7 +144,7 @@ def seo_gap_analysis(df: pd.DataFrame, your_tags: list) -> pd.DataFrame:
 def save_analysis(results: dict, output_dir: str = "data/processed"):
     """Save analysis DataFrames to processed/ folder."""
     os.makedirs(output_dir, exist_ok=True)
-    timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
 
     for name, df in results.items():
         if isinstance(df, pd.DataFrame) and not df.empty:

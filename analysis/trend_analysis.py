@@ -21,16 +21,22 @@ from collections import Counter
 # Core functions
 # ---------------------------------------------------------------------------
 
-def get_tag_frequency(df: pd.DataFrame, top_n: int = 30) -> pd.DataFrame:
-    """Count tag frequency for a given DataFrame (one week's data)."""
-    all_tags = []
-    for tags_str in df["tags"].dropna():
-        tags = [t.strip().lower() for t in tags_str.split(",")]
-        all_tags.extend(tags)
+def split_tags(tags_str: str) -> list:
+    """Split a comma-separated tag string into clean, lower-case tags."""
+    return [t.strip().lower() for t in tags_str.split(",") if t.strip()]
 
-    counts = Counter(all_tags)
+
+def get_tag_frequency(df: pd.DataFrame, top_n: int | None = 30) -> pd.DataFrame:
+    """
+    Count tag frequency for one week's data.
+    top_n=None returns every tag.
+    """
+    counts = Counter()
+    for tags_str in df["tags"].dropna():
+        counts.update(split_tags(tags_str))
+
     freq_df = pd.DataFrame(counts.most_common(top_n), columns=["tag", "count"])
-    freq_df["pct"] = (freq_df["count"] / len(df) * 100).round(1)
+    freq_df["pct"] = (freq_df["count"] / max(len(df), 1) * 100).round(1)
     return freq_df
 
 
@@ -39,8 +45,10 @@ def compare_weeks(df_this: pd.DataFrame, df_last: pd.DataFrame, top_n: int = 30)
     Compare tag frequency between two weeks.
     Returns a DataFrame with rise/fall delta for each tag.
     """
-    freq_this = get_tag_frequency(df_this, top_n=50)
-    freq_last = get_tag_frequency(df_last, top_n=50)
+    # Use full counts: truncating each week to its top tags first would treat a tag
+    # that slipped just outside the cut-off as 0 and report a false rise or fall.
+    freq_this = get_tag_frequency(df_this, top_n=None)
+    freq_last = get_tag_frequency(df_last, top_n=None)
 
     # Merge on tag
     merged = freq_this.merge(
@@ -66,10 +74,10 @@ def get_new_tags(df_this: pd.DataFrame, df_last: pd.DataFrame) -> list:
     tags_last = set()
 
     for tags_str in df_this["tags"].dropna():
-        tags_this.update([t.strip().lower() for t in tags_str.split(",")])
+        tags_this.update(split_tags(tags_str))
 
     for tags_str in df_last["tags"].dropna():
-        tags_last.update([t.strip().lower() for t in tags_str.split(",")])
+        tags_last.update(split_tags(tags_str))
 
     return sorted(tags_this - tags_last)
 

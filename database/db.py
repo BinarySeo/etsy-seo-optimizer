@@ -11,7 +11,7 @@ Usage:
 import sqlite3
 import pandas as pd
 import os
-from datetime import datetime
+from datetime import datetime, timezone
 
 
 DB_PATH = "data/etsy.db"
@@ -20,7 +20,7 @@ DB_PATH = "data/etsy.db"
 class EtsyDB:
 
     def __init__(self, db_path: str = DB_PATH):
-        os.makedirs("data", exist_ok=True)
+        os.makedirs(os.path.dirname(db_path) or ".", exist_ok=True)
         self.db_path = db_path
         self.conn = sqlite3.connect(self.db_path)
         self._create_tables()
@@ -68,19 +68,23 @@ class EtsyDB:
         run_date defaults to today (YYYY-MM-DD).
         """
         if run_date is None:
-            run_date = datetime.utcnow().strftime("%Y-%m-%d")
+            run_date = datetime.now(timezone.utc).strftime("%Y-%m-%d")
 
         df = df.copy()
         df["run_date"] = run_date
 
-        df.to_sql("listings", self.conn, if_exists="append", index=False)
+        # Re-running the same day replaces that run instead of duplicating it,
+        # which would otherwise double every tag count in the trend analysis.
+        with self.conn:
+            self.conn.execute("DELETE FROM listings WHERE run_date = ?", (run_date,))
+            df.to_sql("listings", self.conn, if_exists="append", index=False)
 
         # Log this run
         queries = ", ".join(df["query"].unique().tolist())
         self.conn.execute("""
             INSERT OR REPLACE INTO runs (run_date, total_rows, queries, created_at)
             VALUES (?, ?, ?, ?)
-        """, (run_date, len(df), queries, datetime.utcnow().isoformat()))
+        """, (run_date, len(df), queries, datetime.now(timezone.utc).isoformat()))
         self.conn.commit()
 
         print(f"[DB] Inserted {len(df)} rows for run_date={run_date}")
@@ -114,6 +118,12 @@ class EtsyDB:
             "SELECT run_date FROM runs ORDER BY run_date DESC"
         )
         return [row[0] for row in cursor.fetchall()]
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        self.close()
 
     def close(self):
         self.conn.close()
