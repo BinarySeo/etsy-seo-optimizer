@@ -1,5 +1,4 @@
 # ShopSignal
-![ShopSignal Demo](assets/demo.gif)
 An agentic data pipeline that monitors Etsy market trends and shop traffic,
 then uses LLM-powered analysis to surface actionable signals for a handmade greeting card business.
 
@@ -25,6 +24,12 @@ Running a small Etsy shop means constantly asking questions you don't have time 
 
 Manual research across Etsy, Google Analytics, and competitor shops takes hours.
 ShopSignal automates the entire loop — from data collection to AI-generated action plan.
+
+**Analytics skills shown:** API data ingestion (Etsy, GA4) · time-series storage in SQLite · week-over-week trend detection ·
+TF-IDF keyword extraction · traffic segmentation (source, device, weekday, new vs. returning) · category gap analysis ·
+interactive dashboarding in Streamlit + Plotly
+
+**Sample output:** see a real weekly briefing in [`data/processed/`](data/processed/).
 
 ---
 
@@ -99,13 +104,17 @@ Five-page interactive dashboard:
 ## Project Structure
 
 ```
-shop-signal/
+etsy-seo-optimizer/
+├── strategy/
+│   └── keywords.py           # Tier 1/2/3 keyword strategy for data collection
 ├── scraper/
 │   ├── etsy_scraper.py       # Etsy API v3 data collection
+│   ├── my_shop.py            # Own-shop listings + tags via Etsy OAuth
 │   └── mock_data.py          # Simulated weekly data for development
 ├── analysis/
 │   ├── keyword_analysis.py   # TF-IDF, tag frequency, SEO gap detection
 │   ├── trend_analysis.py     # Week-over-week keyword delta
+│   ├── tag_analysis.py       # Category-level tag patterns (in progress)
 │   ├── ai_briefing.py        # LLM-powered weekly action report
 │   └── ga4_analysis.py       # GA4 fetchers, clustering, AI insights
 ├── database/
@@ -114,10 +123,12 @@ shop-signal/
 │   └── app.py                # Streamlit app — 5 pages
 ├── data/
 │   ├── raw/                  # Scraped CSVs (git-ignored)
-│   └── processed/            # Analysis outputs (git-ignored)
+│   └── processed/            # Analysis outputs; sample briefings (.txt) are committed
+├── ga4_auth.py               # GA4 OAuth helper
 ├── .env.example              # Environment variable template
 ├── requirements.txt
-└── README.md
+├── STRUCTURE.md              # Detailed module guide
+└── DASHBOARD_DESIGN.md       # Dashboard page design notes
 ```
 
 ---
